@@ -7,8 +7,8 @@ from aiogram.dispatcher.filters.state import State, StatesGroup
 from aiogram.types import ParseMode, InlineKeyboardMarkup, InlineKeyboardButton
 import sqlite3
 
-API_TOKEN = ''
-ADMINS = ['707305173']
+API_TOKEN = '6023656375:AAE7d_7qn782FQPZkTXx_154cmQKA2DzyNA'
+ADMINS = [707305173]
 bot = Bot(token=API_TOKEN, parse_mode=ParseMode.HTML)
 storage = MemoryStorage()
 dp = Dispatcher(bot, storage=storage)
@@ -26,6 +26,7 @@ conn.commit()
 class ForwardStates(StatesGroup):
     forward = State()
 
+
 # Обработка команды /start
 @dp.message_handler(commands=['start'])
 async def cmd_start(message: types.Message):
@@ -34,17 +35,10 @@ async def cmd_start(message: types.Message):
     cursor.execute(f"INSERT INTO users (user_id, nickname) VALUES ('{user_id}', '{nickname}');")
     conn.commit()
 
-    # Обработка команды /start
-    @dp.message_handler(commands=['start'])
-    async def cmd_start(message: types.Message):
-        user_id = message.from_user.id
-        nickname = message.from_user.username
-        cursor.execute(f"INSERT INTO users (user_id, nickname) VALUES ('{user_id}', '{nickname}');")
-        conn.commit()
-        if user_id in ADMINS:
-            await message.answer("Ваш бот предложка к вашим услугам, ждите первых сообщений!")
-        else:
-            await message.answer("Привет! Я бот-предложка, используй команду /forward для отправки своего предложения.")
+    if user_id in ADMINS:
+        await message.answer("Ваш бот предложка к вашим услугам, ждите первых сообщений!")
+    else:
+        await message.answer("Привет! Я бот-предложка, используй команду /forward для отправки своего предложения.")
 
 
 # Обработка команды /forward
@@ -67,13 +61,17 @@ async def forward_message(message: types.Message, state: FSMContext):
     await state.finish()
 
 # Обработка нажатий на кнопки
+
 @dp.callback_query_handler(lambda c: c.data in ['ban', 'delete'])
 async def process_callback_button(callback_query: types.CallbackQuery):
-    user_id = callback_query.message.reply_to_message.from_user.id
+    reply_to_message = callback_query.message.reply_to_message
+    if not reply_to_message:
+        return
+    user_id = reply_to_message.forward_from.id
     if callback_query.data == 'ban':
         cursor.execute(f"UPDATE users SET banned = TRUE WHERE user_id = {user_id}")
         conn.commit()
-        await callback_query.answer(text=f"Пользователь {callback_query.message.reply_to_message.from_user.username} заблокирован.")
+        await callback_query.answer(text=f"Пользователь {reply_to_message.from_user.username} заблокирован.")
     elif callback_query.data == 'delete':
         await bot.delete_message(chat_id=callback_query.message.chat.id, message_id=callback_query.message.message_id)
         await bot.delete_message(chat_id=callback_query.message.chat.id, message_id=callback_query.message.reply_to_message.message_id)
