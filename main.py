@@ -55,27 +55,23 @@ async def forward_message(message: types.Message, state: FSMContext):
     for admin in ADMINS:
         forward_message = f"<b>Новое предложение от {message.from_user.username},:</b>\n\n{message.text}"
         keyboard = InlineKeyboardMarkup(row_width=2)
-        keyboard.add(InlineKeyboardButton('Ban', callback_data='ban'),
-                     InlineKeyboardButton('Delete', callback_data='delete'))
+        keyboard.add(InlineKeyboardButton('Ban🤬', callback_data='ban'),
+                     InlineKeyboardButton('Delete🗑', callback_data='delete'))
         await bot.send_message(chat_id=admin, text=forward_message, reply_markup=keyboard)
     await state.finish()
 
-# Обработка нажатий на кнопки
+# Обработка нажатий на кнопки "Ban"
+@dp.callback_query_handler(lambda c: c.data == 'ban')
+async def process_ban_button(callback_query: types.CallbackQuery):
+    user_id = callback_query.message.reply_to_message.from_user.id
+    cursor.execute(f"UPDATE users SET banned = TRUE WHERE user_id = {user_id}")
+    conn.commit()
+    await callback_query.answer(text=f"Пользователь {callback_query.message.reply_to_message.from_user.username} заблокирован.")
 
-@dp.callback_query_handler(lambda c: c.data in ['ban', 'delete'])
-async def process_callback_button(callback_query: types.CallbackQuery):
-    reply_to_message = callback_query.message.reply_to_message
-    if not reply_to_message:
-        return
-    user_id = reply_to_message.forward_from.id
-    if callback_query.data == 'ban':
-        cursor.execute(f"UPDATE users SET banned = TRUE WHERE user_id = {user_id}")
-        conn.commit()
-        await callback_query.answer(text=f"Пользователь {reply_to_message.from_user.username} заблокирован.")
-    elif callback_query.data == 'delete':
-        await bot.delete_message(chat_id=callback_query.message.chat.id, message_id=callback_query.message.message_id)
-        await bot.delete_message(chat_id=callback_query.message.chat.id, message_id=callback_query.message.reply_to_message.message_id)
-
+# Обработка нажатий на кнопки "Delete"
+@dp.callback_query_handler(lambda c: c.data == 'delete')
+async def process_delete_button(callback_query: types.CallbackQuery):
+    await bot.delete_message(chat_id=callback_query.message.chat.id, message_id=callback_query.message.message_id)
 
 # Обработка ответа администратора
 @dp.message_handler(lambda message: message.reply_to_message and message.reply_to_message.from_user.id in ADMINS)
