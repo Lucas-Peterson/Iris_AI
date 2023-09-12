@@ -1,86 +1,48 @@
-import logging
-from aiogram import Bot, Dispatcher, types, executor
-from aiogram.contrib.fsm_storage.memory import MemoryStorage
-from aiogram.dispatcher import FSMContext
-from aiogram.dispatcher.filters import Command
-from aiogram.dispatcher.filters.state import State, StatesGroup
-from aiogram.types import ParseMode, InlineKeyboardMarkup, InlineKeyboardButton
-import sqlite3
-
-API_TOKEN = '6023656375:AAE7d_7qn782FQPZkTXx_154cmQKA2DzyNA'
-ADMINS = [707305173]
-bot = Bot(token=API_TOKEN, parse_mode=ParseMode.HTML)
-storage = MemoryStorage()
-dp = Dispatcher(bot, storage=storage)
-
-conn = sqlite3.connect('users.db', check_same_thread=False)
-cursor = conn.cursor()
-cursor.execute("""CREATE TABLE IF NOT EXISTS users 
-                (id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER NOT NULL,
-                nickname TEXT NOT NULL,
-                banned BOOLEAN DEFAULT FALSE);""")
-conn.commit()
+import numpy as np
 
 
-class ForwardStates(StatesGroup):
-    forward = State()
 
+INPUT_DIM = 4
+OUT_DIM = 3
+H_DIM = 10
 
-# Обработка команды /start
-@dp.message_handler(commands=['start'])
-async def cmd_start(message: types.Message):
-    user_id = message.from_user.id
-    nickname = message.from_user.username
-    cursor.execute(f"INSERT INTO users (user_id, nickname) VALUES ('{user_id}', '{nickname}');")
-    conn.commit()
+x = np.array([7.9, 3.1, 7.5, 1.8])
 
-    if user_id in ADMINS:
-        await message.answer("Ваш бот предложка к вашим услугам, ждите первых сообщений!")
-    else:
-        await message.answer("Привет! Я бот-предложка, используй команду /forward для отправки своего предложения.")
+W1 = np.array([[ 0.33462099,  0.10068401,  0.20557238, -0.19043767,  0.40249301, -0.00925352,  0.00628916,  0.74784975,  0.25069956, -0.09290041 ],
+               [ 0.41689589,  0.93211640, -0.32300143, -0.13845456,  0.58598293, -0.29140373, -0.28473491,  0.48021000, -0.32318306, -0.34146461 ],
+               [-0.21927019, -0.76135162, -0.11721704,  0.92123373,  0.19501658,  0.00904006,  1.03040632, -0.66867859, -0.01571104, -0.08372566 ],
+               [-0.67791724,  0.07044558, -0.40981071,  0.62098450, -0.33009159, -0.47352435,  0.09687051, -0.68724299,  0.43823402, -0.26574543 ]])
 
+b1 =  np.array([-0.34133575, -0.24401602, -0.06262318, -0.30410971, -0.37097632,  0.02670964, -0.51851308,  0.54665141,  0.20777536, -0.29905165 ])
 
-# Обработка команды /forward
-@dp.message_handler(Command('forward'))
-async def cmd_forward(message: types.Message):
-    await message.answer("Введите ваше предложение для пересылки:")
-    await ForwardStates.forward.set()
+W2 = np.array([[ 0.41186367,  0.15406952, -0.47391773 ],
+               [ 0.79701137, -0.64672799, -0.06339983 ],
+               [-0.20137522, -0.07088810,  0.00212071 ],
+               [-0.58743081, -0.17363843,  0.93769169 ],
+               [ 0.33262125,  0.18999841, -0.14977653 ],
+               [ 0.04450406,  0.26168097,  0.10104333 ],
+               [-0.74384144,  0.33092591,  0.65464737 ],
+               [ 0.45764631,  0.48877246, -1.16928700 ],
+               [-0.16020630, -0.12369116,  0.14171301 ],
+               [ 0.26099978,  0.12834471,  0.20866959 ]])
 
-# Пересылка сообщения администраторам
-@dp.message_handler(state=ForwardStates.forward)
-async def forward_message(message: types.Message, state: FSMContext):
-    async with state.proxy() as data:
-        data['forward_message'] = message.text
-    for admin in ADMINS:
-        forward_message = f"<b>Новое предложение от {message.from_user.username},:</b>\n\n{message.text}"
-        keyboard = InlineKeyboardMarkup(row_width=2)
-        keyboard.add(InlineKeyboardButton('Ban🤬', callback_data='ban'),
-                     InlineKeyboardButton('Delete🗑', callback_data='delete'))
-        await bot.send_message(chat_id=admin, text=forward_message, reply_markup=keyboard)
-    await state.finish()
+b2 =  np.array([-0.16286677,  0.06680119, -0.03563594 ])
 
-# Обработка нажатий на кнопки "Ban"
-@dp.callback_query_handler(lambda c: c.data == 'ban')
-async def process_ban_button(callback_query: types.CallbackQuery):
-    user_id = callback_query.message.reply_to_message.from_user.id
-    cursor.execute(f"UPDATE users SET banned = TRUE WHERE user_id = {user_id}")
-    conn.commit()
-    await callback_query.answer(text=f"Пользователь {callback_query.message.reply_to_message.from_user.username} заблокирован.")
+def relu(t):
+    return np.maximum(t, 0)
 
-# Обработка нажатий на кнопки "Delete"
-@dp.callback_query_handler(lambda c: c.data == 'delete')
-async def process_delete_button(callback_query: types.CallbackQuery):
-    await bot.delete_message(chat_id=callback_query.message.chat.id, message_id=callback_query.message.message_id)
+def softmax(t):
+    out = np.exp(t)
+    return out / np.sum(out)
 
-# Обработка ответа администратора
-@dp.message_handler(lambda message: message.reply_to_message and message.reply_to_message.from_user.id in ADMINS)
-async def reply_to_user(message: types.Message):
-    user_id = message.reply_to_message.forward_from.id
-    await bot.send_message(chat_id=user_id, text=f"Ответ администрации: {message.text}")
+def predict(x):
+    t1 = x @ W1 + b1
+    h1 = relu(t1)
+    t2 = h1 @ W2 + b2
+    z = softmax(t2)
+    return z
 
-# Запуск бота
-if __name__ == '__main__':
-    logging.basicConfig(level=logging.INFO)
-    executor.start_polling(dp, skip_updates=True)
-
+probs = predict(x)
+pred_class = np.argmax(probs)
+class_names = ['Setosa', 'Versicolor', 'Virginica']
+print('Predicted class:', class_names[pred_class])
